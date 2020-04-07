@@ -68,11 +68,12 @@ public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements
 
 	@Override
 	public Cache get(String name) throws IOException {
-		String runProfile = (String) ServiceRuntime.getRuntime().getContext().get("run-profile");
+		String runProfile = (String) ServiceRuntime.getRuntime().getContext().get("run.profile");
 		if (runProfile != null && runProfile.equals(getId())) {
 			List<ServiceProfile> profiles = getConfig().getProfiles();
 			if (profiles != null) {
 				for (ServiceProfile profile : profiles) {
+					System.out.println("profile for: " + profile.getService().getId() + " / " + name);
 					// if we have a profile for this service and at least one configuration, return it
 					if (profile.getService() != null && profile.getService().getId().equals(name) && profile.getConfigurations() != null) {
 						return new Cache() {
@@ -85,10 +86,14 @@ public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements
 							public Object get(Object key) throws IOException {
 								try {
 									// we expect the service input here
-									if (key instanceof ComplexContent) {
+									if (key instanceof ComplexContent || key == null) {
 										for (ServiceConfiguration configuration : profile.getConfigurations()) {
 											boolean matches = true;
-											if (configuration.getInputQueries() != null) {
+											// a null key can only match with no input queries
+											if (key == null) {
+												matches = configuration.getInputQueries() == null || configuration.getInputQueries().isEmpty();
+											}
+											else if (configuration.getInputQueries() != null) {
 												for (String inputQuery : configuration.getInputQueries()) {
 													Object result = getVariable((ComplexContent) key, inputQuery);
 													if (result != null) {

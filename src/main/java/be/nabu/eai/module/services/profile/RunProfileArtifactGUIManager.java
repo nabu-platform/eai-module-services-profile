@@ -243,6 +243,8 @@ public class RunProfileArtifactGUIManager extends BaseJAXBGUIManager<RunProfileC
 			}
 		};
 		box.getChildren().add(complexContentEditor.getTree());
+		// need to manually subtract the padding
+		complexContentEditor.getTree().prefWidthProperty().bind(box.widthProperty().subtract(20));
 		
 		HBox buttons = new HBox();
 		buttons.disableProperty().bind(hasLock.not());
