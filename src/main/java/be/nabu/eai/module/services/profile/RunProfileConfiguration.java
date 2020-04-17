@@ -59,6 +59,7 @@ public class RunProfileConfiguration {
 		}
 	}
 	
+	private List<RunProfile> imports;
 	private List<ServiceProfile> profiles;
 	private String description;
 
@@ -74,4 +75,12 @@ public class RunProfileConfiguration {
 	public void setDescription(String description) {
 		this.description = description;
 	}
+	@XmlJavaTypeAdapter(value = ArtifactXMLAdapter.class)
+	public List<RunProfile> getImports() {
+		return imports;
+	}
+	public void setImports(List<RunProfile> imports) {
+		this.imports = imports;
+	}
+	
 }

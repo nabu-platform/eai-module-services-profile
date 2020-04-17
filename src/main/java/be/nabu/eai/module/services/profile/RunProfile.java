@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.text.ParseException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,8 +14,12 @@ import org.slf4j.LoggerFactory;
 
 import be.nabu.eai.module.services.profile.RunProfileConfiguration.ServiceConfiguration;
 import be.nabu.eai.module.services.profile.RunProfileConfiguration.ServiceProfile;
+import be.nabu.eai.repository.api.Feature;
+import be.nabu.eai.repository.api.FeaturedArtifact;
+import be.nabu.eai.repository.api.FeaturedExecutionContext;
 import be.nabu.eai.repository.api.Repository;
 import be.nabu.eai.repository.artifacts.jaxb.JAXBArtifact;
+import be.nabu.eai.repository.impl.FeatureImpl;
 import be.nabu.libs.cache.api.Cache;
 import be.nabu.libs.cache.api.CacheProvider;
 import be.nabu.libs.converter.ConverterFactory;
@@ -31,7 +36,7 @@ import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.binding.api.Window;
 import be.nabu.libs.types.binding.xml.XMLBinding;
 
-public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements CacheProvider {
+public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements CacheProvider, FeaturedArtifact {
 
 	private Map<String, TypeOperation> analyzedOperations = new HashMap<String, TypeOperation>();
 	private Logger logger = LoggerFactory.getLogger(getClass());
@@ -68,12 +73,13 @@ public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements
 
 	@Override
 	public Cache get(String name) throws IOException {
-		String runProfile = (String) ServiceRuntime.getRuntime().getContext().get("run.profile");
-		if (runProfile != null && runProfile.equals(getId())) {
+		List<String> features = ServiceRuntime.getRuntime() != null && ServiceRuntime.getRuntime().getExecutionContext() instanceof FeaturedExecutionContext 
+			? ((FeaturedExecutionContext) ServiceRuntime.getRuntime().getExecutionContext()).getEnabledFeatures() 
+			: null;
+		if (features != null && features.contains(getId())) {
 			List<ServiceProfile> profiles = getConfig().getProfiles();
 			if (profiles != null) {
 				for (ServiceProfile profile : profiles) {
-					System.out.println("profile for: " + profile.getService().getId() + " / " + name);
 					// if we have a profile for this service and at least one configuration, return it
 					if (profile.getService() != null && profile.getService().getId().equals(name) && profile.getConfigurations() != null) {
 						return new Cache() {
@@ -164,5 +170,10 @@ public class RunProfile extends JAXBArtifact<RunProfileConfiguration> implements
 	@Override
 	public void remove(String name) throws IOException {
 		// no can do
+	}
+
+	@Override
+	public List<Feature> getAvailableFeatures() {
+		return Arrays.asList(new FeatureImpl(getId(), getConfig().getDescription()));
 	}
 }
