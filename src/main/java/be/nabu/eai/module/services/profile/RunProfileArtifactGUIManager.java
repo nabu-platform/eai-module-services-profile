@@ -21,6 +21,7 @@ import be.nabu.eai.developer.util.EAIDeveloperUtils.PropertyUpdaterListener;
 import be.nabu.eai.module.services.profile.RunProfileConfiguration.ServiceConfiguration;
 import be.nabu.eai.module.services.profile.RunProfileConfiguration.ServiceProfile;
 import be.nabu.eai.repository.resources.RepositoryEntry;
+import be.nabu.jfx.control.ace.AceEditor;
 import be.nabu.libs.property.api.Property;
 import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.api.DefinedService;
@@ -30,11 +31,16 @@ import be.nabu.libs.types.binding.api.Window;
 import be.nabu.libs.types.binding.xml.XMLBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 import javafx.scene.control.Accordion;
 import javafx.scene.control.Button;
 import javafx.scene.control.TitledPane;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
@@ -58,7 +64,7 @@ public class RunProfileArtifactGUIManager extends BaseJAXBGUIManager<RunProfileC
 	
 	@Override
 	public String getCategory() {
-		return "Cache";
+		return "Caching";
 	}
 	
 	@Override
@@ -208,17 +214,53 @@ public class RunProfileArtifactGUIManager extends BaseJAXBGUIManager<RunProfileC
 		box.setPadding(new Insets(10));
 		MainController.getInstance().showProperties(updater, box, false);
 		
-		ComplexType outputDefinition = profile.getService().getServiceInterface().getOutputDefinition();
+		HBox buttons = new HBox();
+		setComplexContent(runProfile, profile, configuration, box, null, buttons);
 		
+//		box.getChildren().add(formats);
+		
+		buttons.disableProperty().bind(hasLock.not());
+		buttons.setPadding(new Insets(10));
+		Button delete = new Button("Delete Configuration");
+		delete.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
+			@Override
+			public void handle(ActionEvent arg0) {
+				Confirm.confirm(ConfirmType.QUESTION, "Delete Configuration", "Are you sure you want to delete this configuration?", new EventHandler<ActionEvent>() {
+					@Override
+					public void handle(ActionEvent arg0) {
+						profile.getConfigurations().remove(configuration);
+						parent.getChildren().remove(box);
+						MainController.getInstance().setChanged();
+					}
+				});
+			}
+		});
+		buttons.getChildren().add(delete);
+		
+		parent.getChildren().addAll(box, buttons);
+	}
+
+	private void setComplexContent(RunProfile runProfile, ServiceProfile profile, ServiceConfiguration configuration, VBox box, String newContent, HBox buttons) {
+		ComplexType outputDefinition = profile.getService().getServiceInterface().getOutputDefinition();
 		XMLBinding binding = new XMLBinding(outputDefinition, Charset.forName("UTF-8"));
 		binding.setIgnoreUndefined(true);
 		
 		ComplexContent content;
 		if (configuration.getOutput() != null && !configuration.getOutput().trim().isEmpty()) {
 			try {
-				content = binding.unmarshal(new ByteArrayInputStream(configuration.getOutput().getBytes(Charset.forName("UTF-8"))), new Window[0]);
+				content = binding.unmarshal(new ByteArrayInputStream((newContent == null ? configuration.getOutput() : newContent).getBytes(Charset.forName("UTF-8"))), new Window[0]);
+				if (newContent != null) {
+					configuration.setOutput(newContent);
+					MainController.getInstance().setChanged();
+				}
 			}
 			catch (Exception e) {
+				// if we received new content, we failed to parse it, it is invalid, back to xml with you!
+				// this is not very clean code but it should work...
+				if (newContent != null) {
+					setXml(runProfile, profile, configuration, box, newContent, buttons);
+					return;
+				}
 				content = outputDefinition.newInstance();
 				MainController.getInstance().notify(e);
 			}
@@ -242,29 +284,57 @@ public class RunProfileArtifactGUIManager extends BaseJAXBGUIManager<RunProfileC
 				super.update();
 			}
 		};
+		box.getChildren().clear();
 		box.getChildren().add(complexContentEditor.getTree());
-		// need to manually subtract the padding
-		complexContentEditor.getTree().prefWidthProperty().bind(box.widthProperty().subtract(20));
 		
-		HBox buttons = new HBox();
-		buttons.disableProperty().bind(hasLock.not());
-		buttons.setPadding(new Insets(10));
-		Button delete = new Button("Delete Configuration");
-		delete.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
+		Button button = new Button("Edit as XML");
+		button.setId("asXml");
+		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
 			public void handle(ActionEvent arg0) {
-				Confirm.confirm(ConfirmType.QUESTION, "Delete Configuration", "Are you sure you want to delete this configuration?", new EventHandler<ActionEvent>() {
-					@Override
-					public void handle(ActionEvent arg0) {
-						profile.getConfigurations().remove(configuration);
-						parent.getChildren().remove(box);
-						MainController.getInstance().setChanged();
-					}
-				});
+				setXml(runProfile, profile, configuration, box, null, buttons);
 			}
 		});
-		buttons.getChildren().add(delete);
+		Node lookup = buttons.lookup("#asContent");
+		if (lookup != null) {
+			buttons.getChildren().remove(lookup);
+		}
+		buttons.getChildren().add(0, button);
 		
-		parent.getChildren().add(box);
+		// need to manually subtract the padding
+		complexContentEditor.getTree().prefWidthProperty().bind(box.widthProperty().subtract(20));
+	}
+	
+	private void setXml(RunProfile runProfile, ServiceProfile profile, ServiceConfiguration configuration, VBox box, String content, HBox buttons) {
+		AceEditor editor = new AceEditor();
+		editor.setContent("application/xml", content == null ? configuration.getOutput() : content);
+		editor.setKeyCombination("commit", new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN));
+		editor.subscribe("commit", new EventHandler<Event>() {
+			@Override
+			public void handle(Event arg0) {
+				setComplexContent(runProfile, profile, configuration, box, editor.getContent(), buttons);
+			}
+		});
+		box.getChildren().clear();
+		box.getChildren().addAll(editor.getWebView());
+
+		Button button = new Button("Push to content");
+		button.setId("asContent");
+		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
+			@Override
+			public void handle(ActionEvent arg0) {
+				setComplexContent(runProfile, profile, configuration, box, editor.getContent(), buttons);
+			}
+		});
+		Node lookup = buttons.lookup("#asXml");
+		if (lookup != null) {
+			buttons.getChildren().remove(lookup);
+		}
+		// you can get redirect back here very fast, we don't want to the button added multiple times
+		lookup = buttons.lookup("#asContent");
+		if (lookup != null) {
+			buttons.getChildren().remove(lookup);
+		}
+		buttons.getChildren().add(0, button);
 	}
 }
